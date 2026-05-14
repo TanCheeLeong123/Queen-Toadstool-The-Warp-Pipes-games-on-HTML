@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<!-- go to queentoadstoolandwarppipesdle.edgeone.app to enjoy the game -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Band Reversi</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="emojibandreversi.css">
+</head>
+<body>
+<div class="theater-bg"></div>
+<div class="curtain-overlay"></div>
+
+<div class="game-container">
+  <div class="header">
+    <div class="icons-bar">
+      <span class="icon-mushroom">🍄</span>
+      <span class="icon-star">⭐</span>
+      <span class="icon-coin">🪙</span>
+    </div>
+    <h1 class="logo-title">
+      <span class="mushroom-1up">🍄</span>
+      EMOJI BAND
+      <span class="mushroom-1up">🍄</span>
+    </h1>
+    <p class="subtitle">REVERSI • BLACK VS WHITE</p>
+  </div>
+
+  <div class="lineup-card">
+    <div class="lineup-title">★ SCOREBOARD ★</div>
+    <div class="lineup-grid">
+      <div class="lineup-item active" id="blackPlayer">
+        <span>BLACK</span>
+        <div class="score-value">⚫ <span id="blackCount">2</span></div>
+      </div>
+      <div class="lineup-item" id="whitePlayer">
+        <span>WHITE</span>
+        <div class="score-value">⚪ <span id="whiteCount">2</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="turn-indicator" id="turnIndicator">BLACK PLAYER'S TURN</div>
+
+  <div class="game-board" id="board"></div>
+
+  <div class="controls">
+    <button class="btn" id="newGameBtn">NEW GAME</button>
+    <button class="btn" id="hintBtn">SHOW MOVES</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="gameOverModal">
+  <div class="modal-content">
+    <div class="modal-title" id="modalTitle">GAME OVER!</div>
+    <div class="modal-score" id="modalScore"></div>
+    <button class="btn" id="playAgainBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+const EMPTY = '.';
+const BLACK = '⚫';
+const WHITE = '⚪';
+const DIRECTIONS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+
+let board = [];
+let currentPlayer = BLACK;
+let gameActive = true;
+let showHints = true;
+
+const boardEl = document.getElementById('board');
+const toastEl = document.getElementById('toast');
+const turnIndicatorEl = document.getElementById('turnIndicator');
+const blackCountEl = document.getElementById('blackCount');
+const whiteCountEl = document.getElementById('whiteCount');
+const blackPlayerEl = document.getElementById('blackPlayer');
+const whitePlayerEl = document.getElementById('whitePlayer');
+const modalEl = document.getElementById('gameOverModal');
+const modalTitleEl = document.getElementById('modalTitle');
+const modalScoreEl = document.getElementById('modalScore');
+const newGameBtn = document.getElementById('newGameBtn');
+const hintBtn = document.getElementById('hintBtn');
+const playAgainBtn = document.getElementById('playAgainBtn');
+
+function createBoard() {
+  board = Array(8).fill(null).map(() => Array(8).fill(EMPTY));
+  board[3][3] = WHITE;
+  board[3][4] = BLACK;
+  board[4][3] = BLACK;
+  board[4][4] = WHITE;
+}
+
+function isOnBoard(x, y) {
+  return x >= 0 && x < 8 && y >= 0 && y < 8;
+}
+
+function isValidMove(board, x, y, player) {
+  if (board[x][y] !== EMPTY) return false;
+
+  const opponent = player === BLACK ? WHITE : BLACK;
+  let valid = false;
+
+  for (const [dx, dy] of DIRECTIONS) {
+    let nx = x + dx;
+    let ny = y + dy;
+    let foundOpponent = false;
+
+    while (isOnBoard(nx, ny) && board[nx][ny] === opponent) {
+      nx += dx;
+      ny += dy;
+      foundOpponent = true;
+    }
+
+    if (foundOpponent && isOnBoard(nx, ny) && board[nx][ny] === player) {
+      valid = true;
+      break;
+    }
+  }
+  return valid;
+}
+
+function getValidMoves(board, player) {
+  const moves = [];
+  for (let x = 0; x < 8; x++) {
+    for (let y = 0; y < 8; y++) {
+      if (isValidMove(board, x, y, player)) {
+        moves.push([x, y]);
+      }
+    }
+  }
+  return moves;
+}
+
+function makeMove(board, x, y, player) {
+  const opponent = player === BLACK ? WHITE : BLACK;
+  const toFlip = [];
+
+  board[x][y] = player;
+
+  for (const [dx, dy] of DIRECTIONS) {
+    let nx = x + dx;
+    let ny = y + dy;
+    const tempFlip = [];
+
+    while (isOnBoard(nx, ny) && board[nx][ny] === opponent) {
+      tempFlip.push([nx, ny]);
+      nx += dx;
+      ny += dy;
+    }
+
+    if (isOnBoard(nx, ny) && board[nx][ny] === player) {
+      toFlip.push(...tempFlip);
+    }
+  }
+
+  for (const [fx, fy] of toFlip) {
+    board[fx][fy] = player;
+  }
+
+  return toFlip;
+}
+
+function getScore(board) {
+  let blackScore = 0;
+  let whiteScore = 0;
+  for (const row of board) {
+    for (const cell of row) {
+      if (cell === BLACK) blackScore++;
+      if (cell === WHITE) whiteScore++;
+    }
+  }
+  return [blackScore, whiteScore];
+}
+
+function gameOver(board) {
+  return getValidMoves(board, BLACK).length === 0 && getValidMoves(board, WHITE).length === 0;
+}
+
+function renderBoard() {
+  boardEl.innerHTML = '';
+  const validMoves = gameActive && showHints ? getValidMoves(board, currentPlayer) : [];
+  
+  for (let x = 0; x < 8; x++) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    
+    for (let y = 0; y < 8; y++) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.dataset.x = x;
+      tile.dataset.y = y;
+
+      const isValid = validMoves.some(([vx, vy]) => vx === x && vy === y);
+      if (isValid) {
+        tile.classList.add('valid');
+      }
+
+      if (board[x][y] !== EMPTY) {
+        const piece = document.createElement('div');
+        piece.className = `piece ${board[x][y] === BLACK ? 'black' : 'white'}`;
+        piece.textContent = board[x][y];
+        tile.appendChild(piece);
+      }
+
+      tile.addEventListener('click', () => handleCellClick(x, y));
+      row.appendChild(tile);
+    }
+    boardEl.appendChild(row);
+  }
+  updateUI();
+}
+
+function updateUI() {
+  const [blackScore, whiteScore] = getScore(board);
+  blackCountEl.textContent = blackScore;
+  whiteCountEl.textContent = whiteScore;
+  
+  const playerName = currentPlayer === BLACK ? 'BLACK' : 'WHITE';
+  turnIndicatorEl.textContent = gameActive ? `${playerName} PLAYER'S TURN` : 'GAME OVER';
+
+  blackPlayerEl.classList.toggle('active', currentPlayer === BLACK && gameActive);
+  whitePlayerEl.classList.toggle('active', currentPlayer === WHITE && gameActive);
+}
+
+function showToast(text, duration = 2000) {
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  setTimeout(() => {
+    toastEl.classList.remove('show');
+  }, duration);
+}
+
+function animateFlips(flippedPieces, callback) {
+  if (flippedPieces.length === 0) {
+    callback();
+    return;
+  }
+
+  flippedPieces.forEach(([x, y], index) => {
+    setTimeout(() => {
+      const row = boardEl.children[x];
+      const tile = row.children[y];
+      const piece = tile.querySelector('.piece');
+      if (piece) {
+        piece.classList.add('flipping');
+        setTimeout(() => {
+          piece.className = `piece ${currentPlayer === BLACK ? 'black' : 'white'}`;
+          piece.textContent = currentPlayer === BLACK ? WHITE : BLACK;
+        }, 300);
+      }
+    }, index * 60);
+  });
+
+  setTimeout(callback, flippedPieces.length * 60 + 400);
+}
+
+function handleCellClick(x, y) {
+  if (!gameActive) return;
+
+  const validMoves = getValidMoves(board, currentPlayer);
+  const isValid = validMoves.some(([vx, vy]) => vx === x && vy === y);
+
+  if (!isValid) {
+    showToast("INVALID MOVE!");
+    return;
+  }
+
+  const flipped = makeMove(board, x, y, currentPlayer);
+  renderBoard();
+  
+  animateFlips(flipped, () => {
+    if (gameOver(board)) {
+      endGame();
+      return;
+    }
+
+    currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+    
+    let nextValidMoves = getValidMoves(board, currentPlayer);
+    if (nextValidMoves.length === 0) {
+      const playerName = currentPlayer === BLACK ? 'BLACK' : 'WHITE';
+      showToast(`${playerName} HAS NO MOVES! SKIPPING TURN`, 2500);
+      currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+      renderBoard();
+    } else {
+      renderBoard();
+    }
+  });
+}
+
+function endGame() {
+  gameActive = false;
+  const [blackScore, whiteScore] = getScore(board);
+  
+  let winnerText;
+  if (blackScore > whiteScore) {
+    winnerText = `BLACK WINS!`;
+  } else if (whiteScore > blackScore) {
+    winnerText = `WHITE WINS!`;
+  } else {
+    winnerText = `IT'S A TIE!`;
+  }
+  
+  modalTitleEl.textContent = winnerText;
+  modalScoreEl.textContent = `⚫ ${blackScore} - ${whiteScore} ⚪`;
+  modalEl.classList.add('show');
+  updateUI();
+}
+
+function initGame() {
+  createBoard();
+  currentPlayer = BLACK;
+  gameActive = true;
+  modalEl.classList.remove('show');
+  renderBoard();
+  showToast("PLACE YOUR TILE!", 1500);
+}
+
+newGameBtn.addEventListener('click', initGame);
+playAgainBtn.addEventListener('click', initGame);
+hintBtn.addEventListener('click', () => {
+  showHints = !showHints;
+  hintBtn.textContent = showHints ? 'HIDE MOVES' : 'SHOW MOVES';
+  renderBoard();
+});
+
+initGame();
+</script>
+</body>
+</html>
