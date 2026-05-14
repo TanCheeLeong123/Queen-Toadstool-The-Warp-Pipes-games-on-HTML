@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Band Minesweeper</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="emojibandminesweeper.css">
+</head>
+<body>
+<div class="theater-bg"></div>
+<div class="curtain-overlay"></div>
+
+<div class="game-container">
+  <div class="header">
+    <div class="logo-title">EMOJI BAND</div>
+    <div class="subtitle">MINESWEEPER</div>
+  </div>
+
+  <div class="difficulty">
+    <button class="diff-btn active" data-config="9,9,10">Beginner</button>
+    <button class="diff-btn" data-config="16,16,40">Intermediate</button>
+    <button class="diff-btn" data-config="16,30,99">Expert</button>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item">MINES: <span id="mine-count">10</span></div>
+    <button class="reset-btn" id="reset">🙂</button>
+    <div class="status-item">FLAGS: <span id="flag-count">0</span></div>
+  </div>
+
+  <div class="board-wrapper">
+    <div class="board" id="board"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+class Minesweeper {
+  constructor(rows = 9, cols = 9, mines = 10) {
+    this.rows = rows;
+    this.cols = cols;
+    this.mines = mines;
+    this.reset();
+  }
+
+  reset() {
+    this.board = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+    this.revealed = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+    this.flagged = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+    this.gameOver = false;
+    this.firstMove = true;
+    this.won = false;
+    this.flagsPlaced = 0;
+    document.getElementById('board').innerHTML = '';
+    this.render();
+    this.updateStatus();
+  }
+
+  generateMines(excludeR, excludeC) {
+    let positions = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (r!== excludeR || c!== excludeC) positions.push([r, c]);
+      }
+    }
+    
+    for (let i = positions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [positions[i], positions[j]] = [positions[j], positions[i]];
+    }
+    
+    for (let i = 0; i < this.mines; i++) {
+      const [r, c] = positions[i];
+      this.board[r][c] = 'M';
+    }
+
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.board[r][c]!== 'M') {
+          this.board[r][c] = this.countAdjacent(r, c);
+        }
+      }
+    }
+  }
+
+  countAdjacent(r, c) {
+    let count = 0;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
+          if (this.board[nr][nc] === 'M') count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  reveal(r, c) {
+    if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) return;
+    if (this.flagged[r][c] || this.revealed[r][c] || this.gameOver) return;
+
+    if (this.firstMove) {
+      this.generateMines(r, c);
+      this.firstMove = false;
+    }
+
+    this.revealed[r][c] = true;
+
+    if (this.board[r][c] === 'M') {
+      this.gameOver = true;
+      this.won = false;
+      this.revealAllMines(r, c);
+      this.showToast('💥 BOOM! You hit a mine!');
+      document.getElementById('reset').textContent = '😵';
+      return;
+    }
+
+    if (this.board[r][c] === 0) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          this.reveal(r + dr, c + dc);
+        }
+      }
+    }
+
+    this.render();
+    if (this.checkWin()) {
+      this.gameOver = true;
+      this.won = true;
+      this.showToast('🎉 YOU WIN!');
+      document.getElementById('reset').textContent = '😎';
+    }
+  }
+
+  toggleFlag(r, c) {
+    if (this.revealed[r][c] || this.gameOver) return;
+    this.flagged[r][c] =!this.flagged[r][c];
+    this.flagsPlaced += this.flagged[r][c]? 1 : -1;
+    this.render();
+    this.updateStatus();
+  }
+
+  revealAllMines(hitR, hitC) {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.board[r][c] === 'M') this.revealed[r][c] = true;
+      }
+    }
+    this.render();
+    const hitCell = document.querySelector(`[data-r="${hitR}"][data-c="${hitC}"]`);
+    if (hitCell) hitCell.classList.add('hit');
+  }
+
+  checkWin() {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.board[r][c]!== 'M' &&!this.revealed[r][c]) return false;
+      }
+    }
+    return true;
+  }
+
+  render() {
+    const board = document.getElementById('board');
+    board.style.gridTemplateColumns = `repeat(${this.cols}, 1fr)`;
+    
+    if (board.children.length === 0) {
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const cell = document.createElement('button');
+          cell.className = 'cell';
+          cell.dataset.r = r;
+          cell.dataset.c = c;
+          
+          cell.addEventListener('click', () => this.reveal(r, c));
+          cell.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.toggleFlag(r, c);
+          });
+          
+          let pressTimer;
+          cell.addEventListener('touchstart', (e) => {
+            pressTimer = setTimeout(() => {
+              e.preventDefault();
+              this.toggleFlag(r, c);
+            }, 500);
+          });
+          cell.addEventListener('touchend', () => clearTimeout(pressTimer));
+          cell.addEventListener('touchmove', () => clearTimeout(pressTimer));
+          
+          board.appendChild(cell);
+        }
+      }
+    }
+    
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = board.children[r * this.cols + c];
+        cell.className = 'cell';
+        cell.textContent = '';
+        
+        if (this.flagged[r][c] &&!this.revealed[r][c]) {
+          cell.classList.add('flagged');
+          cell.textContent = '🚩';
+        } else if (this.revealed[r][c]) {
+          cell.classList.add('revealed');
+          if (this.board[r][c] === 'M') {
+            cell.classList.add('mine');
+            cell.textContent = '💣';
+          } else if (this.board[r][c] > 0) {
+            cell.textContent = this.board[r][c];
+            cell.classList.add(`n${this.board[r][c]}`);
+          }
+        } else if (this.gameOver && this.flagged[r][c] && this.board[r][c]!== 'M') {
+          cell.classList.add('wrong-flag');
+          cell.textContent = '';
+        }
+      }
+    }
+  }
+
+  updateStatus() {
+    document.getElementById('mine-count').textContent = this.mines;
+    document.getElementById('flag-count').textContent = this.flagsPlaced;
+  }
+
+  showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+}
+
+let game = new Minesweeper(9, 9, 10);
+
+document.getElementById('reset').addEventListener('click', () => {
+  game.reset();
+  document.getElementById('reset').textContent = '🙂';
+});
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    const [rows, cols, mines] = e.target.dataset.config.split(',').map(Number);
+    game = new Minesweeper(rows, cols, mines);
+    document.getElementById('reset').textContent = '🙂';
+  });
+});
+
+document.addEventListener('contextmenu', e => {
+  if (e.target.classList.contains('cell')) e.preventDefault();
+});
+</script>
+</body>
+</html>
