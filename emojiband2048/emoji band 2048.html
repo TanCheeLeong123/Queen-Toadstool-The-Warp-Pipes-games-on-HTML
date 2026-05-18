@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Band 2048</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="emojiband2048.css">
+</head>
+<body>
+<div class="theater-bg"></div>
+<div class="curtain-overlay"></div>
+
+<div class="game-container">
+  <div class="header">
+    <div class="logo-title">EMOJI BAND</div>
+    <div class="subtitle">2048</div>
+  </div>
+
+  <div class="score-bar">
+    <div class="score-box">
+      <div class="score-label">SCORE</div>
+      <div class="score-value" id="score">0</div>
+    </div>
+    <div class="score-box">
+      <div class="score-label">BEST</div>
+      <div class="score-value" id="best">0</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="new-game"><i class="fa-solid fa-rotate-right"></i> NEW GAME</button>
+  </div>
+
+  <div class="board-wrapper">
+    <div class="board" id="board"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+class Game2048 {
+  constructor() {
+    this.size = 4;
+    this.board = [];
+    this.score = 0;
+    this.best = parseInt(localStorage.getItem('emojiband2048-best') || '0');
+    this.gameOver = false;
+    this.won = false;
+    this.init();
+  }
+
+  init() {
+    this.board = Array(this.size).fill().map(() => Array(this.size).fill(0));
+    this.score = 0;
+    this.gameOver = false;
+    this.won = false;
+    this.addRandomTile();
+    this.addRandomTile();
+    this.render();
+    this.updateScore();
+  }
+
+  addRandomTile() {
+    const empty = [];
+    for (let r = 0; r < this.size; r++) {
+      for (let c = 0; c < this.size; c++) {
+        if (this.board[r][c] === 0) empty.push([r, c]);
+      }
+    }
+    if (empty.length === 0) return;
+    const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+    this.board[r][c] = Math.random() < 0.9? 2 : 4;
+  }
+
+  move(direction) {
+    if (this.gameOver) return;
+    let moved = false;
+    const oldBoard = JSON.stringify(this.board);
+
+    const rotate = (b) => b[0].map((_, i) => b.map(row => row[i]).reverse());
+    const flip = (b) => b.map(row => [...row].reverse());
+
+    let b = this.board.map(row => [...row]);
+    if (direction === 'up') b = rotate(rotate(rotate(b)));
+    if (direction === 'right') b = flip(b);
+    if (direction === 'down') b = rotate(b);
+
+    for (let r = 0; r < this.size; r++) {
+      let row = b[r].filter(v => v!== 0);
+      for (let i = 0; i < row.length - 1; i++) {
+        if (row[i] === row[i + 1]) {
+          row[i] *= 2;
+          this.score += row[i];
+          if (row[i] === 2048 &&!this.won) {
+            this.won = true;
+            this.showToast('🎉 YOU HIT 2048!');
+          }
+          row.splice(i + 1, 1);
+        }
+      }
+      while (row.length < this.size) row.push(0);
+      b[r] = row;
+    }
+
+    if (direction === 'up') b = rotate(b);
+    if (direction === 'right') b = flip(b);
+    if (direction === 'down') b = rotate(rotate(rotate(b)));
+
+    this.board = b;
+    if (JSON.stringify(this.board)!== oldBoard) {
+      this.addRandomTile();
+      moved = true;
+    }
+
+    this.render();
+    this.updateScore();
+    if (!this.canMove()) {
+      this.gameOver = true;
+      this.showToast('💀 GAME OVER!');
+    }
+  }
+
+  canMove() {
+    for (let r = 0; r < this.size; r++) {
+      for (let c = 0; c < this.size; c++) {
+        if (this.board[r][c] === 0) return true;
+        if (c < this.size - 1 && this.board[r][c] === this.board[r][c + 1]) return true;
+        if (r < this.size - 1 && this.board[r][c] === this.board[r + 1][c]) return true;
+      }
+    }
+    return false;
+  }
+
+  render() {
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    for (let r = 0; r < this.size; r++) {
+      for (let c = 0; c < this.size; c++) {
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        const val = this.board[r][c];
+        if (val!== 0) {
+          tile.textContent = val;
+          tile.classList.add(`tile-${val}`);
+        }
+        board.appendChild(tile);
+      }
+    }
+  }
+
+  updateScore() {
+    document.getElementById('score').textContent = this.score;
+    if (this.score > this.best) {
+      this.best = this.score;
+      localStorage.setItem('emojiband2048-best', this.best);
+    }
+    document.getElementById('best').textContent = this.best;
+  }
+
+  showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+}
+
+const game = new Game2048();
+
+document.getElementById('new-game').addEventListener('click', () => game.init());
+
+document.addEventListener('keydown', (e) => {
+  const keys = {
+    ArrowUp: 'up', ArrowDown: 'down',
+    ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right'
+  };
+  if (keys[e.key]) {
+    e.preventDefault();
+    game.move(keys[e.key]);
+  }
+});
+
+// Touch controls for mobile
+let touchStartX = 0, touchStartY = 0;
+document.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, {passive: true});
+
+document.addEventListener('touchend', (e) => {
+  if (!touchStartX ||!touchStartY) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 30) game.move('right');
+    else if (dx < -30) game.move('left');
+  } else {
+    if (dy > 30) game.move('down');
+    else if (dy < -30) game.move('up');
+  }
+  touchStartX = 0; touchStartY = 0;
+}, {passive: true});
+</script>
+</body>
+</html>
