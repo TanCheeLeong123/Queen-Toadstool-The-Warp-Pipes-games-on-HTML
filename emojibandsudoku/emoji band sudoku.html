@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Band Sudoku</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="emojibandsudoku.css">
+</head>
+<body>
+<div class="theater-bg"></div>
+<div class="spotlight"></div>
+<div class="curtain-overlay"></div>
+
+<div class="game-container">
+  <div class="header">
+    <div class="logo-title">EMOJI BAND</div>
+    <div class="subtitle">SUDOKU</div>
+  </div>
+
+  <div class="info-bar">
+    <div class="info-box">
+      <div class="info-label">TIME</div>
+      <div class="info-value" id="timer">0:00</div>
+    </div>
+    <div class="info-box">
+      <div class="info-label">ERRORS</div>
+      <div class="info-value" id="errors">0/3</div>
+    </div>
+    <div class="info-box">
+      <div class="info-label">HINTS</div>
+      <div class="info-value" id="hints">3</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="new-game"><i class="fa-solid fa-rotate-right"></i> NEW</button>
+    <button class="btn btn-secondary" id="hint"><i class="fa-solid fa-lightbulb"></i> HINT</button>
+    <button class="btn" id="notes"><i class="fa-solid fa-pen"></i> NOTES</button>
+    <button class="btn btn-danger" id="solve"><i class="fa-solid fa-wand-magic-sparkles"></i> SOLVE</button>
+  </div>
+
+  <div class="board-wrapper">
+    <div class="sudoku-board" id="board" role="grid" aria-label="Sudoku board"></div>
+  </div>
+
+  <div class="number-pad" id="numpad"></div>
+</div>
+
+<div class="toast" id="toast" role="alert"></div>
+
+<script>
+class SudokuGame {
+  constructor() {
+    this.size = 9;
+    this.boardEl = document.getElementById('board');
+    this.board = [];
+    this.solution = [];
+    this.fixed = [];
+    this.notes = [];
+    this.selected = null;
+    this.errors = 0;
+    this.maxErrors = 3;
+    this.hintsLeft = 3;
+    this.startTime = Date.now();
+    this.timerInterval = null;
+    this.gameWon = false;
+    this.gameOverFlag = false;
+    this.notesMode = false;
+    this.difficulty = 'medium';
+    this.init();
+    window.addEventListener('resize', () => this.handleResize());
+    this.initKeyboard();
+  }
+
+  handleResize() {
+    // CSS handles all sizing now via aspect-ratio
+    this.renderNumpad();
+  }
+
+  init() {
+    this.gameOverFlag = false;
+    this.gameWon = false;
+    this.errors = 0;
+    this.hintsLeft = 3;
+    this.selected = null;
+    this.notesMode = false;
+    clearInterval(this.timerInterval);
+    this.generatePuzzle();
+    this.renderBoard();
+    this.renderNumpad();
+    this.startTimer();
+    this.updateInfo();
+    document.getElementById('notes').style.opacity = '1';
+  }
+
+  generateSolution() {
+    const board = Array(9).fill().map(() => Array(9).fill(0));
+    const isValid = (board, row, col, num) => {
+      for (let x = 0; x < 9; x++) {
+        if (board[row][x] === num || board[x][col] === num) return false;
+      }
+      const sr = row - row % 3, sc = col - col % 3;
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          if (board[sr + i][sc + j] === num) return false;
+        }
+      }
+      return true;
+    };
+    const solve = (board) => {
+      for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+          if (board[row][col] === 0) {
+            const nums = [1,2,3,4,5,6,7,8,9].sort(() => Math.random() - 0.5);
+            for (let num of nums) {
+              if (isValid(board, row, col, num)) {
+                board[row][col] = num;
+                if (solve(board)) return true;
+                board[row][col] = 0;
+              }
+            }
+            return false;
+          }
+        }
+      }
+      return true;
+    };
+    solve(board);
+    return board;
+  }
+
+  generatePuzzle() {
+    this.solution = this.generateSolution();
+    this.board = this.solution.map(row => [...row]);
+    this.fixed = this.board.map(row => row.map(() => false));
+    this.notes = Array(9).fill().map(() => Array(9).fill().map(() => new Set()));
+    
+    const difficultyMap = { easy: 35, medium: 45, hard: 55 };
+    let toRemove = difficultyMap[this.difficulty] || 45;
+    
+    while (toRemove > 0) {
+      const r = Math.floor(Math.random() * 9);
+      const c = Math.floor(Math.random() * 9);
+      if (this.board[r][c] !== 0) {
+        this.board[r][c] = 0;
+        toRemove--;
+      }
+    }
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (this.board[r][c] !== 0) this.fixed[r][c] = true;
+      }
+    }
+  }
+
+  renderBoard() {
+    this.boardEl.innerHTML = '';
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.style.left = `${(c * 100) / 9}%`;
+        cell.style.top = `${(r * 100) / 9}%`;
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('aria-label', `Row ${r+1} Column ${c+1}`);
+        cell.tabIndex = 0;
+        
+        if (c === 2 || c === 5) cell.classList.add('box-right');
+        if (r === 2 || r === 5) cell.classList.add('box-bottom');
+        
+        this.updateCellDisplay(r, c, cell);
+        
+        cell.addEventListener('click', () => this.selectCell(r, c));
+        cell.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            this.selectCell(r, c);
+          }
+        });
+        this.boardEl.appendChild(cell);
+      }
+    }
+  }
+
+  updateCellDisplay(r, c, cell = null) {
+    if (!cell) {
+      const cells = document.querySelectorAll('.cell');
+      cell = cells[r * 9 + c];
+    }
+    cell.innerHTML = '';
+    
+    if (this.board[r][c] !== 0) {
+      const content = document.createElement('div');
+      content.className = 'cell-content';
+      content.textContent = this.board[r][c];
+      cell.appendChild(content);
+      if (this.fixed[r][c]) cell.classList.add('fixed');
+    } else if (this.notes[r][c].size > 0) {
+      const notesDiv = document.createElement('div');
+      notesDiv.className = 'cell-notes';
+      for (let i = 1; i <= 9; i++) {
+        const noteSpan = document.createElement('span');
+        noteSpan.textContent = this.notes[r][c].has(i) ? i : '';
+        notesDiv.appendChild(noteSpan);
+      }
+      cell.appendChild(notesDiv);
+    }
+  }
+
+  renderNumpad() {
+    const pad = document.getElementById('numpad');
+    pad.innerHTML = '';
+    const counts = this.getNumberCounts();
+    
+    for (let i = 1; i <= 9; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'num-btn';
+      if (counts[i] === 9) btn.classList.add('completed');
+      btn.textContent = i;
+      btn.setAttribute('aria-label', `Enter ${i}`);
+      btn.addEventListener('click', () => this.inputNumber(i));
+      pad.appendChild(btn);
+    }
+    const erase = document.createElement('button');
+    erase.className = 'num-btn erase';
+    erase.innerHTML = '<i class="fa-solid fa-eraser"></i> ERASE';
+    erase.setAttribute('aria-label', 'Erase cell');
+    erase.addEventListener('click', () => this.inputNumber(0));
+    pad.appendChild(erase);
+  }
+
+  getNumberCounts() {
+    const counts = {};
+    for (let i = 1; i <= 9; i++) counts[i] = 0;
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (this.board[r][c] !== 0) counts[this.board[r][c]]++;
+      }
+    }
+    return counts;
+  }
+
+  selectCell(r, c) {
+    if (this.gameWon || this.gameOverFlag) return;
+    document.querySelectorAll('.cell').forEach(cell => {
+      cell.classList.remove('selected', 'highlight', 'same-number');
+    });
+    this.selected = [r, c];
+    const cells = document.querySelectorAll('.cell');
+    const idx = r * 9 + c;
+    cells[idx].classList.add('selected');
+    cells[idx].focus();
+    
+    const selectedNum = this.board[r][c];
+    
+    for (let i = 0; i < 9; i++) {
+      cells[r * 9 + i].classList.add('highlight');
+      cells[i * 9 + c].classList.add('highlight');
+      if (selectedNum !== 0 && this.board[r][i] === selectedNum) cells[r * 9 + i].classList.add('same-number');
+      if (selectedNum !== 0 && this.board[i][c] === selectedNum) cells[i * 9 + c].classList.add('same-number');
+    }
+    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+    for (let i = br; i < br + 3; i++) {
+      for (let j = bc; j < bc + 3; j++) {
+        cells[i * 9 + j].classList.add('highlight');
+        if (selectedNum !== 0 && this.board[i][j] === selectedNum) cells[i * 9 + j].classList.add('same-number');
+      }
+    }
+  }
+
+  isValidMove(r, c, num) {
+    if (num === 0) return true;
+    for (let i = 0; i < 9; i++) {
+      if (i !== c && this.board[r][i] === num) return false;
+      if (i !== r && this.board[i][c] === num) return false;
+    }
+    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+    for (let i = br; i < br + 3; i++) {
+      for (let j = bc; j < bc + 3; j++) {
+        if ((i !== r || j !== c) && this.board[i][j] === num) return false;
+      }
+    }
+    return true;
+  }
+
+  inputNumber(num) {
+    if (!this.selected || this.gameWon || this.gameOverFlag) return;
+    const [r, c] = this.selected;
+    if (this.fixed[r][c]) return;
+    
+    if (this.notesMode && num !== 0) {
+      if (this.notes[r][c].has(num)) {
+        this.notes[r][c].delete(num);
+      } else {
+        this.notes[r][c].add(num);
+      }
+      this.board[r][c] = 0;
+      this.updateCellDisplay(r, c);
+      return;
+    }
+    
+    this.notes[r][c].clear();
+    const cell = document.querySelectorAll('.cell')[r * 9 + c];
+    cell.classList.remove('error');
+
+    if (num !== 0 && !this.isValidMove(r, c, num)) {
+      cell.classList.add('error');
+      this.errors++;
+      this.updateInfo();
+      this.board[r][c] = num;
+      this.updateCellDisplay(r, c);
+      this.createParticles(cell, '❌');
+      setTimeout(() => cell.classList.remove('error'), 500);
+      if (this.errors >= this.maxErrors) this.gameOver();
+      return;
+    }
+
+    this.board[r][c] = num;
+    this.updateCellDisplay(r, c);
+    this.renderNumpad();
+    
+    if (num !== 0) {
+      this.createParticles(cell, '⭐');
+      this.checkConflicts(r, c, num);
+    }
+    
+    if (this.isBoardFull() && this.checkWin()) this.win();
+    this.selectCell(r, c);
+  }
+
+  checkConflicts(r, c, num) {
+    const cells = document.querySelectorAll('.cell');
+    for (let i = 0; i < 9; i++) {
+      if (i !== c && this.board[r][i] === num && !this.fixed[r][i]) {
+        cells[r * 9 + i].classList.add('error');
+        setTimeout(() => cells[r * 9 + i].classList.remove('error'), 500);
+      }
+      if (i !== r && this.board[i][c] === num && !this.fixed[i][c]) {
+        cells[i * 9 + c].classList.add('error');
+        setTimeout(() => cells[i * 9 + c].classList.remove('error'), 500);
+      }
+    }
+    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+    for (let i = br; i < br + 3; i++) {
+      for (let j = bc; j < bc + 3; j++) {
+        if ((i !== r || j !== c) && this.board[i][j] === num && !this.fixed[i][j]) {
+          cells[i * 9 + j].classList.add('error');
+          setTimeout(() => cells[i * 9 + j].classList.remove('error'), 500);
+        }
+      }
+    }
+  }
+
+  createParticles(element, emoji) {
+    const rect = element.getBoundingClientRect();
+    for (let i = 0; i < 5; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'particle';
+      particle.textContent = emoji;
+      particle.style.left = rect.left + rect.width / 2 + (Math.random() - 0.5) * 40 + 'px';
+      particle.style.top = rect.top + rect.height / 2 + 'px';
+      particle.style.animationDelay = i * 0.1 + 's';
+      document.body.appendChild(particle);
+      setTimeout(() => particle.remove(), 2000);
+    }
+  }
+
+  isBoardFull() {
+    return this.board.every(row => row.every(cell => cell !== 0));
+  }
+
+  checkWin() {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (this.board[r][c] !== this.solution[r][c]) return false;
+      }
+    }
+    return true;
+  }
+
+  win() {
+    this.gameWon = true;
+    clearInterval(this.timerInterval);
+    const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+    const min = Math.floor(elapsed / 60);
+    const sec = elapsed % 60;
+    this.showToast(`🎉 VICTORY!\n${min}:${sec.toString().padStart(2, '0')}`, 'win');
+    this.createWinParticles();
+  }
+
+  createWinParticles() {
+    const emojis = ['🎉', '⭐', '🏆', '💫', '✨'];
+    for (let i = 0; i < 30; i++) {
+      setTimeout(() => {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        particle.style.left = Math.random() * window.innerWidth + 'px';
+        particle.style.top = window.innerHeight + 'px';
+        particle.style.fontSize = (20 + Math.random() * 20) + 'px';
+        document.body.appendChild(particle);
+        setTimeout(() => particle.remove(), 2000);
+      }, i * 50);
+    }
+  }
+
+  gameOver() {
+    this.gameOverFlag = true;
+    clearInterval(this.timerInterval);
+    this.showToast('💀 GAME OVER!\nToo many errors');
+    setTimeout(() => this.init(), 2500);
+  }
+
+  startTimer() {
+    this.startTime = Date.now();
+    clearInterval(this.timerInterval);
+    this.timerInterval = setInterval(() => {
+      if (this.gameWon || this.gameOverFlag) return;
+      const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+      const min = Math.floor(elapsed / 60);
+      const sec = elapsed % 60;
+      document.getElementById('timer').textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+    }, 1000);
+  }
+
+  updateInfo() {
+    document.getElementById('errors').textContent = `${this.errors}/${this.maxErrors}`;
+    document.getElementById('hints').textContent = this.hintsLeft;
+  }
+
+  showToast(msg, type = '') {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show ' + type;
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  giveHint() {
+    if (this.gameWon || this.gameOverFlag || this.hintsLeft <= 0) {
+      if (this.hintsLeft <= 0) this.showToast('No hints left!');
+      return;
+    }
+    
+    let targets = [];
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (this.board[r][c] !== 0 && this.board[r][c] !== this.solution[r][c]) {
+          targets.push([r, c, 'wrong']);
+        } else if (this.board[r][c] === 0) {
+          targets.push([r, c, 'empty']);
+        }
+      }
+    }
+    if (targets.length === 0) return;
+    
+    const wrong = targets.filter(t => t[2] === 'wrong');
+    const [r, c] = wrong.length ? wrong[Math.floor(Math.random() * wrong.length)] : targets[Math.floor(Math.random() * targets.length)];
+
+    this.board[r][c] = this.solution[r][c];
+    this.notes[r][c].clear();
+    const cell = document.querySelectorAll('.cell')[r * 9 + c];
+    this.updateCellDisplay(r, c, cell);
+    cell.classList.remove('error');
+    cell.classList.add('selected');
+    this.createParticles(cell, '💡');
+    this.hintsLeft--;
+    this.updateInfo();
+    this.renderNumpad();
+    
+    setTimeout(() => cell.classList.remove('selected'), 800);
+    if (this.isBoardFull() && this.checkWin()) this.win();
+  }
+
+  toggleNotes() {
+    this.notesMode = !this.notesMode;
+    const btn = document.getElementById('notes');
+    btn.style.opacity = this.notesMode ? '0.6' : '1';
+    btn.style.boxShadow = this.notesMode ? '0 3px 0 #1B5E20, inset 0 0 20px rgba(0,0,0,0.5)' : '0 6px 0 #1B5E20';
+    this.showToast(this.notesMode ? '📝 Notes ON' : '📝 Notes OFF');
+  }
+
+  autoSolve() {
+    if (this.gameWon || this.gameOverFlag) return;
+    if (!confirm('Reveal the entire solution?')) return;
+    
+    this.board = this.solution.map(row => [...row]);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        this.notes[r][c].clear();
+      }
+    }
+    this.renderBoard();
+    this.renderNumpad();
+    this.win();
+  }
+
+  initKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      if (this.gameWon || this.gameOverFlag) return;
+      if (!this.selected) return;
+      
+      if (e.key >= '1' && e.key <= '9') {
+        e.preventDefault();
+        this.inputNumber(parseInt(e.key));
+      }
+      if (e.key === '0' || e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        this.inputNumber(0);
+      }
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        let [r, c] = this.selected;
+        if (e.key === 'ArrowUp') r = Math.max(0, r - 1);
+        if (e.key === 'ArrowDown') r = Math.min(8, r + 1);
+        if (e.key === 'ArrowLeft') c = Math.max(0, c - 1);
+        if (e.key === 'ArrowRight') c = Math.min(8, c + 1);
+        this.selectCell(r, c);
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        this.toggleNotes();
+      }
+      if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        this.giveHint();
+      }
+    });
+  }
+}
+
+const game = new SudokuGame();
+document.getElementById('new-game').addEventListener('click', () => game.init());
+document.getElementById('hint').addEventListener('click', () => game.giveHint());
+document.getElementById('notes').addEventListener('click', () => game.toggleNotes());
+document.getElementById('solve').addEventListener('click', () => game.autoSolve());
+</script>
+</body>
+</html>
