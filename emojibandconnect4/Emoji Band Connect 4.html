@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Band Connect 4</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="emojibandconnect4.css">
+</head>
+<body>
+<div class="theater-bg"></div>
+<div class="spotlight"></div>
+<div class="curtain-overlay"></div>
+
+<div class="game-container">
+  <div class="header">
+    <div class="logo-title">EMOJI BAND</div>
+    <div class="subtitle">CONNECT 4</div>
+  </div>
+
+  <div class="info-bar">
+    <div class="info-box" id="p1-box">
+      <div class="info-label">PLAYER 1</div>
+      <div class="info-value" style="color: var(--p1-color)">🔴 RED</div>
+    </div>
+    <div class="info-box" id="p2-box">
+      <div class="info-label">PLAYER 2</div>
+      <div class="info-value" style="color: var(--p2-color)">🟡 GOLD</div>
+    </div>
+    <div class="info-box">
+      <div class="info-label">TURN</div>
+      <div class="info-value" id="turn-counter">1</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="new-game"><i class="fa-solid fa-rotate-right"></i> NEW GAME</button>
+    <button class="btn btn-secondary" id="vs-ai"><i class="fa-solid fa-robot"></i> VS AI</button>
+    <button class="btn btn-secondary" id="undo"><i class="fa-solid fa-rotate-left"></i> UNDO</button>
+  </div>
+
+  <div class="board-wrapper">
+    <div class="connect-board" id="board" role="grid" aria-label="Connect 4 board"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="alert"></div>
+
+<script>
+class Connect4Game {
+  constructor() {
+    this.rows = 6;
+    this.cols = 7;
+    this.board = [];
+    this.currentPlayer = 1;
+    this.gameOver = false;
+    this.vsAI = false;
+    this.turnCount = 1;
+    this.history = [];
+    this.boardEl = document.getElementById('board');
+    this.init();
+    this.initEvents();
+  }
+
+  init() {
+    this.board = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+    this.currentPlayer = 1;
+    this.gameOver = false;
+    this.turnCount = 1;
+    this.history = [];
+    this.renderBoard();
+    this.updateInfo();
+  }
+
+  initEvents() {
+    document.getElementById('new-game').addEventListener('click', () => {
+      this.vsAI = false;
+      this.init();
+    });
+    document.getElementById('vs-ai').addEventListener('click', () => {
+      this.vsAI = true;
+      this.init();
+      this.showToast('🤖 VS AI MODE!');
+    });
+    document.getElementById('undo').addEventListener('click', () => this.undo());
+  }
+
+  renderBoard() {
+    this.boardEl.innerHTML = '';
+
+    // Create column indicators
+    for (let c = 0; c < this.cols; c++) {
+      const indicator = document.createElement('div');
+      indicator.className = 'column-indicator';
+      indicator.style.left = `${(c * 100) / this.cols}%`;
+      indicator.dataset.col = c;
+      const disc = document.createElement('div');
+      disc.className = 'indicator-disc';
+      indicator.appendChild(disc);
+      this.boardEl.appendChild(indicator);
+    }
+
+    // Create slots
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        slot.dataset.r = r;
+        slot.dataset.c = c;
+        slot.setAttribute('role', 'gridcell');
+        slot.setAttribute('aria-label', `Row ${r+1} Column ${c+1}`);
+
+        slot.addEventListener('mouseenter', () => this.showIndicator(c));
+        slot.addEventListener('mouseleave', () => this.hideIndicator(c));
+        slot.addEventListener('click', () => this.handleColumnClick(c));
+
+        this.boardEl.appendChild(slot);
+      }
+    }
+  }
+
+  showIndicator(col) {
+    if (this.gameOver) return;
+    const indicators = document.querySelectorAll('.column-indicator');
+    indicators[col].classList.add('show');
+    const disc = indicators[col].querySelector('.indicator-disc');
+    disc.style.background = this.currentPlayer === 1
+     ? 'radial-gradient(circle at 30% 30%, #ff6b6b 0%, var(--p1-color) 60%, #8B1614 100%)'
+      : 'radial-gradient(circle at 30% 30%, #fff59d 0%, var(--p2-color) 60%, #FFA500 100%)';
+  }
+
+  hideIndicator(col) {
+    const indicators = document.querySelectorAll('.column-indicator');
+    indicators[col].classList.remove('show');
+  }
+
+  handleColumnClick(col) {
+    if (this.gameOver) return;
+    if (this.vsAI && this.currentPlayer === 2) return;
+
+    const row = this.getLowestEmptyRow(col);
+    if (row === -1) {
+      this.showToast('Column full!');
+      return;
+    }
+
+    this.makeMove(row, col);
+  }
+
+  getLowestEmptyRow(col) {
+    for (let r = this.rows - 1; r >= 0; r--) {
+      if (this.board[r][col] === 0) return r;
+    }
+    return -1;
+  }
+
+  makeMove(row, col) {
+    this.board[row][col] = this.currentPlayer;
+    this.history.push({row, col, player: this.currentPlayer});
+
+    const slot = document.querySelectorAll('.slot')[row * this.cols + col];
+    const disc = document.createElement('div');
+    disc.className = `disc p${this.currentPlayer}`;
+    slot.appendChild(disc);
+
+    this.createParticles(slot, this.currentPlayer === 1? '🔴' : '🟡');
+
+    if (this.checkWin(row, col)) {
+      this.gameOver = true;
+      this.showToast(`🎉 PLAYER ${this.currentPlayer} WINS!`, 'win');
+      this.highlightWinningDiscs();
+      this.createWinParticles();
+      return;
+    }
+
+    if (this.isBoardFull()) {
+      this.gameOver = true;
+      this.showToast('🤝 DRAW GAME!');
+      return;
+    }
+
+    this.currentPlayer = this.currentPlayer === 1? 2 : 1;
+    this.turnCount++;
+    this.updateInfo();
+
+    if (this.vsAI && this.currentPlayer === 2 &&!this.gameOver) {
+      setTimeout(() => this.aiMove(), 600);
+    }
+  }
+
+  aiMove() {
+    const col = this.getBestMove();
+    const row = this.getLowestEmptyRow(col);
+    if (row!== -1) {
+      this.makeMove(row, col);
+    }
+  }
+
+  getBestMove() {
+    // 1. Check if AI can win
+    for (let c = 0; c < this.cols; c++) {
+      const r = this.getLowestEmptyRow(c);
+      if (r!== -1) {
+        this.board[r][c] = 2;
+        if (this.checkWin(r, c)) {
+          this.board[r][c] = 0;
+          return c;
+        }
+        this.board[r][c] = 0;
+      }
+    }
+
+    // 2. Block player win
+    for (let c = 0; c < this.cols; c++) {
+      const r = this.getLowestEmptyRow(c);
+      if (r!== -1) {
+        this.board[r][c] = 1;
+        if (this.checkWin(r, c)) {
+          this.board[r][c] = 0;
+          return c;
+        }
+        this.board[r][c] = 0;
+      }
+    }
+
+    // 3. Prefer center
+    const centerCol = 3;
+    if (this.getLowestEmptyRow(centerCol)!== -1) return centerCol;
+
+    // 4. Random valid move
+    const validCols = [];
+    for (let c = 0; c < this.cols; c++) {
+      if (this.getLowestEmptyRow(c)!== -1) validCols.push(c);
+    }
+    return validCols[Math.floor(Math.random() * validCols.length)];
+  }
+
+  checkWin(row, col) {
+    const player = this.board[row][col];
+    const directions = [
+      [0, 1], // horizontal
+      [1, 0], // vertical
+      [1, 1], // diagonal \
+      [1, -1] // diagonal /
+    ];
+
+    for (let [dr, dc] of directions) {
+      let count = 1;
+      let winningCells = [[row, col]];
+
+      // Check positive direction
+      for (let i = 1; i < 4; i++) {
+        const r = row + dr * i;
+        const c = col + dc * i;
+        if (r < 0 || r >= this.rows || c < 0 || c >= this.cols || this.board[r][c]!== player) break;
+        count++;
+        winningCells.push([r, c]);
+      }
+
+      // Check negative direction
+      for (let i = 1; i < 4; i++) {
+        const r = row - dr * i;
+        const c = col - dc * i;
+        if (r < 0 || r >= this.rows || c < 0 || c >= this.cols || this.board[r][c]!== player) break;
+        count++;
+        winningCells.push([r, c]);
+      }
+
+      if (count >= 4) {
+        this.winningCells = winningCells;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  highlightWinningDiscs() {
+    if (!this.winningCells) return;
+    this.winningCells.forEach(([r, c]) => {
+      const slot = document.querySelectorAll('.slot')[r * this.cols + c];
+      const disc = slot.querySelector('.disc');
+      if (disc) disc.classList.add('winner');
+    });
+  }
+
+  isBoardFull() {
+    return this.board[0].every(cell => cell!== 0);
+  }
+
+  undo() {
+    if (this.history.length === 0 || this.gameOver) return;
+
+    const movesToUndo = this.vsAI? 2 : 1;
+    for (let i = 0; i < movesToUndo && this.history.length > 0; i++) {
+      const lastMove = this.history.pop();
+      this.board[lastMove.row][lastMove.col] = 0;
+      const slot = document.querySelectorAll('.slot')[lastMove.row * this.cols + lastMove.col];
+      const disc = slot.querySelector('.disc');
+      if (disc) disc.remove();
+      this.currentPlayer = lastMove.player;
+      this.turnCount--;
+    }
+
+    this.gameOver = false;
+    this.updateInfo();
+  }
+
+  updateInfo() {
+    document.getElementById('turn-counter').textContent = this.turnCount;
+    document.getElementById('p1-box').classList.toggle('active', this.currentPlayer === 1 &&!this.gameOver);
+    document.getElementById('p2-box').classList.toggle('active', this.currentPlayer === 2 &&!this.gameOver);
+  }
+
+  showToast(msg, type = '') {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show ' + type;
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  createParticles(element, emoji) {
+    const rect = element.getBoundingClientRect();
+    for (let i = 0; i < 6; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'particle';
+      particle.textContent = emoji;
+      particle.style.left = rect.left + rect.width / 2 + (Math.random() - 0.5) * 40 + 'px';
+      particle.style.top = rect.top + rect.height / 2 + 'px';
+      particle.style.animationDelay = i * 0.05 + 's';
+      document.body.appendChild(particle);
+      setTimeout(() => particle.remove(), 2000);
+    }
+  }
+
+  createWinParticles() {
+    const emojis = ['🎉', '⭐', '🏆', '💫', '✨', '🔴', '🟡'];
+    for (let i = 0; i < 40; i++) {
+      setTimeout(() => {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        particle.style.left = Math.random() * window.innerWidth + 'px';
+        particle.style.top = window.innerHeight + 'px';
+        particle.style.fontSize = (20 + Math.random() * 20) + 'px';
+        document.body.appendChild(particle);
+        setTimeout(() => particle.remove(), 2000);
+      }, i * 40);
+    }
+  }
+}
+
+const game = new Connect4Game();
+</script>
+</body>
+</html>
