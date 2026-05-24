@@ -58,6 +58,7 @@ class Connect4Game {
     this.vsAI = false;
     this.turnCount = 1;
     this.history = [];
+    this.activeCol = 3;
     this.boardEl = document.getElementById('board');
     this.init();
     this.initEvents();
@@ -69,8 +70,10 @@ class Connect4Game {
     this.gameOver = false;
     this.turnCount = 1;
     this.history = [];
+    this.activeCol = 3;
     this.renderBoard();
     this.updateInfo();
+    this.updateIndicator();
   }
 
   initEvents() {
@@ -111,28 +114,43 @@ class Connect4Game {
         slot.setAttribute('role', 'gridcell');
         slot.setAttribute('aria-label', `Row ${r+1} Column ${c+1}`);
 
-        slot.addEventListener('mouseenter', () => this.showIndicator(c));
-        slot.addEventListener('mouseleave', () => this.hideIndicator(c));
+        slot.addEventListener('mouseenter', () => this.setActiveCol(c));
         slot.addEventListener('click', () => this.handleColumnClick(c));
+
+        // Mobile: tap to set active column, second tap to drop
+        slot.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          if (this.activeCol === c) {
+            this.handleColumnClick(c);
+          } else {
+            this.setActiveCol(c);
+          }
+        }, {passive: false});
 
         this.boardEl.appendChild(slot);
       }
     }
   }
 
-  showIndicator(col) {
+  setActiveCol(col) {
     if (this.gameOver) return;
-    const indicators = document.querySelectorAll('.column-indicator');
-    indicators[col].classList.add('show');
-    const disc = indicators[col].querySelector('.indicator-disc');
-    disc.style.background = this.currentPlayer === 1
-     ? 'radial-gradient(circle at 30% 30%, #ff6b6b 0%, var(--p1-color) 60%, #8B1614 100%)'
-      : 'radial-gradient(circle at 30% 30%, #fff59d 0%, var(--p2-color) 60%, #FFA500 100%)';
+    this.activeCol = col;
+    this.updateIndicator();
   }
 
-  hideIndicator(col) {
+  updateIndicator() {
     const indicators = document.querySelectorAll('.column-indicator');
-    indicators[col].classList.remove('show');
+    indicators.forEach((ind, idx) => {
+      const disc = ind.querySelector('.indicator-disc');
+      if (idx === this.activeCol &&!this.gameOver) {
+        ind.classList.add('show');
+        disc.style.background = this.currentPlayer === 1
+         ? 'radial-gradient(circle at 30% 30%, #ff6b6b 0%, var(--p1-color) 60%, #8B1614 100%)'
+          : 'radial-gradient(circle at 30% 30%, #fff59d 0%, var(--p2-color) 60%, #FFA500 100%)';
+      } else {
+        ind.classList.remove('show');
+      }
+    });
   }
 
   handleColumnClick(col) {
@@ -171,18 +189,21 @@ class Connect4Game {
       this.showToast(`🎉 PLAYER ${this.currentPlayer} WINS!`, 'win');
       this.highlightWinningDiscs();
       this.createWinParticles();
+      this.updateIndicator();
       return;
     }
 
     if (this.isBoardFull()) {
       this.gameOver = true;
       this.showToast('🤝 DRAW GAME!');
+      this.updateIndicator();
       return;
     }
 
     this.currentPlayer = this.currentPlayer === 1? 2 : 1;
     this.turnCount++;
     this.updateInfo();
+    this.updateIndicator();
 
     if (this.vsAI && this.currentPlayer === 2 &&!this.gameOver) {
       setTimeout(() => this.aiMove(), 600);
@@ -291,7 +312,7 @@ class Connect4Game {
   undo() {
     if (this.history.length === 0 || this.gameOver) return;
 
-    const movesToUndo = this.vsAI? 2 : 1;
+    const movesToUndo = this.vsAI && this.history.length >= 2? 2 : 1;
     for (let i = 0; i < movesToUndo && this.history.length > 0; i++) {
       const lastMove = this.history.pop();
       this.board[lastMove.row][lastMove.col] = 0;
@@ -304,6 +325,7 @@ class Connect4Game {
 
     this.gameOver = false;
     this.updateInfo();
+    this.updateIndicator();
   }
 
   updateInfo() {
