@@ -77,7 +77,6 @@ class Game2048 {
 
   move(direction) {
     if (this.gameOver) return;
-    let moved = false;
     const oldBoard = JSON.stringify(this.board);
 
     const rotate = (b) => b[0].map((_, i) => b.map(row => row[i]).reverse());
@@ -112,7 +111,6 @@ class Game2048 {
     this.board = b;
     if (JSON.stringify(this.board)!== oldBoard) {
       this.addRandomTile();
-      moved = true;
     }
 
     this.render();
@@ -184,26 +182,66 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Touch controls for mobile
-let touchStartX = 0, touchStartY = 0;
-document.addEventListener('touchstart', (e) => {
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
-}, {passive: true});
+// --- FIXED Touch controls for mobile ---
+const boardEl = document.getElementById('board');
+let touchStart = null;
 
-document.addEventListener('touchend', (e) => {
-  if (!touchStartX ||!touchStartY) return;
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 30) game.move('right');
-    else if (dx < -30) game.move('left');
-  } else {
-    if (dy > 30) game.move('down');
-    else if (dy < -30) game.move('up');
+boardEl.addEventListener('touchstart', (e) => {
+  if (e.touches.length!== 1) return;
+  touchStart = {
+    x: e.touches[0].clientX,
+    y: e.touches[0].clientY,
+    time: Date.now()
+  };
+}, { passive: true });
+
+boardEl.addEventListener('touchmove', (e) => {
+  if (!touchStart) return;
+  // Stop page scrolling when swiping on board - this is what fixes DOWN
+  const dx = e.touches[0].clientX - touchStart.x;
+  const dy = e.touches[0].clientY - touchStart.y;
+  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+    e.preventDefault();
   }
-  touchStartX = 0; touchStartY = 0;
-}, {passive: true});
+}, { passive: false });
+
+boardEl.addEventListener('touchend', (e) => {
+  if (!touchStart) return;
+
+  const touchEnd = {
+    x: e.changedTouches[0].clientX,
+    y: e.changedTouches[0].clientY
+  };
+
+  const dx = touchEnd.x - touchStart.x;
+  const dy = touchEnd.y - touchStart.y;
+  const dt = Date.now() - touchStart.time;
+
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  // Must be intentional swipe: >35px and <800ms
+  if (Math.max(absDx, absDy) < 35 || dt > 800) {
+    touchStart = null;
+    return;
+  }
+
+  // Dominant axis must be 1.2x bigger to avoid diagonal misread
+  if (absDx > absDy * 1.2) {
+    if (dx > 0) game.move('right');
+    else game.move('left');
+  } else if (absDy > absDx * 1.2) {
+    if (dy > 0) game.move('down');
+    else game.move('up');
+  }
+
+  touchStart = null;
+}, { passive: true });
+
+// Prevent pull-to-refresh double issues
+boardEl.addEventListener('touchcancel', () => {
+  touchStart = null;
+}, { passive: true });
 </script>
 </body>
 </html>
